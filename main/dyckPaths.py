@@ -160,3 +160,6 @@ def board_to_dyck_word(chips, n_tiers):
         x += 1
 
     return dw
+
+
+# hi
