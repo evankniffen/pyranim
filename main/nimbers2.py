@@ -10,6 +10,8 @@ import numpy as np
 CHECK = (True, True)
 
 class state:
+    # TODO: revise bitmap to grow an envelope to avoid if else statements
+    #       that may be significantly slowing down computation
     """
     A class to describe the state in an n-tier game as a bitmap
 
@@ -42,10 +44,10 @@ class state:
 
         if CHECK[0]:
             if not self.check():
-                raise ValueError("Wrong syntax state initialized in state.__init__")
+                raise TypeError("Wrong syntax state initialized in state.__init__")
         if CHECK[1]:
             if not self.is_legal():
-                raise ValueError("Illegal state initialized in state.__init__")
+                raise TypeError("Illegal state initialized in state.__init__")
         
 
 
@@ -96,7 +98,7 @@ class state:
                 if (self.bitmap[row][col]):
                     print('0', end=' ')
                 else:
-                    print('X', end=' ')
+                    print('-', end=' ')
             print(' '*row, end='*\n')
 
         print('*' * (2* self.n_tiers + 3))
@@ -105,10 +107,10 @@ class state:
     def above(self, row, col):
         """ Returns indices (row, col) of above given stone as a tuple"""
         if (row == self.n_tiers - 1):
-            return ()
+            return np.array((), ndmin=1)
         if (col == 0):
-            return (self.bitmap[row+1][col])
-        return (self.bitmap[row+1][col], self.bitmap[row+1][col-1])
+            return np.array((self.bitmap[row+1][col]), ndmin=1)
+        return np.array((self.bitmap[row+1][col], self.bitmap[row+1][col-1]), ndmin=1)
     
     def num_above(self, row, col):
         """ Returns number of stones above given stone """
@@ -124,30 +126,59 @@ class state:
         above = self.above(row, col)
         num_above = np.sum(above)
 
-        if num_above == 2 | (not bitmap[row][col]): # stop that chud
-            raise IndexError("Illegal removal at ("+row+","+col+") using state.remove")
-        
-        elif num_above == 1: # try to remove the one right above
-            if above[0]: # <--kill left
-                bitmap[row][col] = False
-                return self.remove(row+1, col, bitmap)
-            else:        # <--kill right
-                return self.remove(row+1, col-1, bitmap)
-            
-        else: # no more at the top. Remove this one
-            bitmap[row][col] = False
-            return bitmap
-        
+        if (num_above == 2) | (not bitmap[row][col]): # stop that chud
+            error = "Illegal removal at ("+str(row)+","+str(col)+")"
+            raise IndexError(error)
 
+        # otherwise
+        bitmap_copy = np.copy(bitmap)
+
+        r = row
+        c = col
+        while r < self.n_tiers:
+            bitmap_copy[r][c] = False
+            r += 1
         
+        r = row + 1
+        c = col - 1
+        while (r < self.n_tiers) & (c >= 0):
+            #print(r, c)
+            bitmap_copy[r][c] = False
+            r += 1
+            c -= 1
+
+        return bitmap_copy
         
-        
+    
+    def find_next(self):
+        """
+        Gives a list of all possible next states, as bitmaps
+        """
+
+        self.next = []
+
+        for row in range(self.n_tiers):
+            for col in range(self.n_tiers - row):
+                try: # Can I remove it?
+                    removed = self.remove(row, col, self.bitmap)
+                    self.next.append(removed)
+                except: # can't (womp womp)
+                    continue
+    
+    def print_next(self):
+        print("-"*10)
+        print(len(self.next), "found next")
+        print("-"*10)
+
+        for bitmap in self.next:
+            newstate = state(bitmap, n_tiers=self.n_tiers)
+            newstate.print()
 
 
 
 ##############################################################################
-# Testing
-
+# Testing initializations
+"""
 example1 = np.array(((True, True, True), (True, False, False), (False, False, False)))
 example2 = np.array(((True, False, True), (False, True, False), (True, False, False)))
 example3 = np.array(((True, True, True), (True, True, True), (True, True, True)))
@@ -162,3 +193,48 @@ state1.print()
 # (will throw an improper state error)
 #state4 = state(example4, n_tiers=2)
 # (will throw a size error)
+"""
+
+# Testing removals
+"""
+big = np.array(((True, True, True), (True, True, False), (True, False, False)))
+mystate = state(big)
+mystate.print()
+cut = mystate.remove(1, 0, mystate.bitmap)
+cutstate = state(cut)
+cutstate.print()
+cut2 = cutstate.remove(0, 1, cutstate.bitmap)
+cutstate2 = state(cut2)
+cutstate2.print()
+#bad = mystate.remove(0, 1, mystate.bitmap)
+#mystate.print()
+# throws an error for illegal removal (tried to remove an inner)
+womp = mystate.remove(0, 2, mystate.bitmap)
+#print(womp)
+wompstate = state(womp)
+wompstate.print()
+"""
+
+# Testing next
+"""
+big = np.array(((True, True, True), (True, True, False), (True, False, False)))
+bigstate = state(big)
+bigstate.find_next()
+bigstate.print_next()
+
+medium = np.array(((True, True, True), (True, False, False), (False, False, False)))
+mediumstate = state(medium)
+mediumstate.find_next()
+mediumstate.print_next()
+
+small = np.array(((False, True, False), (False, False, False), (False, False, False)))
+smallstate = state(small)
+smallstate.find_next()
+smallstate.print_next()
+
+big = np.array(((True, True, True, True), (True, True, True, False), (True, True, False, False), (True, False, False, False)))
+bigstate = state(big, n_tiers=4)
+bigstate.find_next()
+bigstate.print_next()
+"""
+
