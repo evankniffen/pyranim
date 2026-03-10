@@ -8,6 +8,8 @@ import numpy as np
 # Global parameter on whether moves should be checked for size, legality
 # each time they are initialized
 CHECK = (True, True)
+# Global parameter on pyramid size (tested at 3)
+N_TIERS = 3
 
 class state:
     # TODO: revise bitmap to grow an envelope to avoid if else statements
@@ -33,12 +35,10 @@ class state:
         list of all possible next states as bitmaps
     nimber: unsigned int
         computed nimber
-    complete: bool
-        value assigned whether nimber was already computed or not
 
     """
 
-    def __init__(self, bitmap, n_tiers=3, check=CHECK):
+    def __init__(self, bitmap, n_tiers=N_TIERS, check=CHECK):
         self.n_tiers = n_tiers
         self.bitmap = bitmap
 
@@ -175,6 +175,11 @@ class state:
             newstate.print()
 
 
+    def find_nimber(self) -> int:
+        # TODO: finish nimber computation functionality
+        self.nimber = 0
+        return self.nimber
+
 
 ##############################################################################
 # Testing initializations
@@ -237,4 +242,58 @@ bigstate = state(big, n_tiers=4)
 bigstate.find_next()
 bigstate.print_next()
 """
+##############################################################################
 
+
+class game:
+    """
+    A class to describe the state in an n-tier game as a bitmap
+
+    Parameters
+    ------------
+    n_tier: int
+        number of pyramid tiers in the game
+        
+    Attributes
+    ------------
+    states: dict (of dicts)
+        key: ndarray
+            bitmap
+        value: dict
+            "state": (state)
+                state object of bitmap
+            "found next?": (bool)
+                does this state have the next values found?
+            "found nimber?": (bool)
+                does this state have its nim value found?
+
+    """
+
+    def __init__(self, n_tiers=N_TIERS):
+        self.n_tiers = n_tiers
+        self.states = {}
+    
+    def load(self, default_load=True, bitmap=np.empty(shape=(1, 1), dtype=bool)):
+        """
+        Loads the dictionary with its first, maximum-element state.
+        If left on default, will go with P_n, the n-pyramid.
+        If not left on default, must provide a proper n-game bitmap.
+        """
+        if default_load:
+            bitmap=np.empty(shape=(self.n_tiers, self.n_tiers), dtype=bool)
+
+            for row in range(self.n_tiers):
+                for col in range(self.n_tiers - row):
+                    bitmap[row][col] = True
+                for col in range(self.n_tiers - row, self.n_tiers):
+                    bitmap[row][col] = False
+            
+        self.states[list(bitmap.flatten())] = {"state": state(bitmap, n_tiers=self.n_tiers), "found next?": False, "found nim?": False}
+        # (this will naturally throw an error for improper inputs when initializing state)
+
+
+##############################################################################
+# Testing initializations
+five_game = game(5)
+five_game.load()
+print(five_game.states)
