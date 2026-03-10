@@ -288,7 +288,7 @@ class game:
                 for col in range(self.n_tiers - row, self.n_tiers):
                     bitmap[row][col] = False
             
-        self.states[list(bitmap.flatten())] = {"state": state(bitmap, n_tiers=self.n_tiers), "found next?": False, "found nim?": False}
+        #self.states[# TODO: enter dyck word here] = {"state": state(bitmap, n_tiers=self.n_tiers), "found next?": False, "found nim?": False}
         # (this will naturally throw an error for improper inputs when initializing state)
 
 
