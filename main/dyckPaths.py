@@ -46,6 +46,15 @@ def dyck_word_to_UD(dw):
     return "".join("U" if step == 1 else "D" for step in dw)
 
 
+def UD_to_dyck_word(path):
+    """
+    Convert a 'U'/'D' string like 'UUDDUD' back to a Dyck word
+    [1,1,0,0,1,0,...].
+
+    U = 1, D = 0
+    """
+    return [1 if step == "U" else 0 for step in path]
+
 def board_to_dyck_word(chips, n_tiers):
     """
     Given the current board state (chips dict from game.py) and number of tiers,

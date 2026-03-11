@@ -1,18 +1,18 @@
-# game.py
+"""
+gippity-generated code that removes the nimbers and fixes a selection bug
+"""
 
 import tkinter as tk
 from tkinter import simpledialog, messagebox
 
 from dyckPaths import (
     board_to_dyck_word,
-    dyck_word_to_parentheses,
     dyck_word_to_UD,
 )
 from permutations import (
     dyck_word_to_132_avoiding_permutation,
     format_permutation,
 )
-from nimbers import PyramidNimberCalculator
 
 
 class PyramidNimGUI:
@@ -65,7 +65,7 @@ class PyramidNimGUI:
         )
         self.dyck_canvas.pack(pady=5, padx=5)
 
-        # Text display for Dyck word + permutation + nimber
+        # Text display for Dyck word + permutation
         self.dyck_display = tk.Label(
             sidebar,
             text="",
@@ -89,9 +89,6 @@ class PyramidNimGUI:
         # 0 = Alice (blue), 1 = Bob (red)
         self.current_player = 0
 
-        # nimber calculator will be created in new_game()
-        self.nimber_calc = None
-
         self.new_game()
 
     # ==============================
@@ -99,7 +96,6 @@ class PyramidNimGUI:
     # ==============================
 
     def new_game(self):
-        # Ask for number of tiers
         n = simpledialog.askinteger(
             "New Game",
             "Enter number of tiers (n):",
@@ -107,7 +103,6 @@ class PyramidNimGUI:
             maxvalue=15,
         )
         if n is None:
-            # User cancelled; if no existing game, default to 3
             if self.n_tiers == 0:
                 n = 3
             else:
@@ -118,9 +113,6 @@ class PyramidNimGUI:
         self.chips.clear()
         self.canvas.delete("all")
         self.status_label.config(text="")
-
-        # (Re)build nimber calculator for this n
-        self.nimber_calc = PyramidNimberCalculator(self.n_tiers)
 
         self.init_chips()
         self.update_player_label()
@@ -135,7 +127,7 @@ class PyramidNimGUI:
 
         # row 0 = bottom, row n-1 = top
         for row in range(n):
-            row_len = n - row  # bottom has n, then n-1, ..., 1
+            row_len = n - row
             total_width = (row_len - 1) * self.h_spacing
             start_x = center_x - total_width / 2
             y = base_y - row * self.v_spacing
@@ -167,23 +159,35 @@ class PyramidNimGUI:
             self.player_label.config(text="Current Player: Bob (red)", fg="red")
 
     # ==============================
-    #       BIRD'S-EYE VISIBILITY
+    #       MOVE VALIDATION
     # ==============================
 
-    def compute_visible_chips(self):
+    def count_chips_above(self, rc):
         """
-        A chip is 'visible from above' if it is the highest present chip
-        at its x-coordinate (bird's eye view).
+        Count how many present chips are directly above chip (row, col).
+
+        In this indexing:
+        - (row + 1, col - 1) is above-left
+        - (row + 1, col) is above-right
         """
-        columns = {}  # rounded_x -> (row, col) of highest present chip
-        for (row, col), chip in self.chips.items():
-            if not chip["present"]:
-                continue
-            key = round(chip["x"])
-            # higher row index = closer to the top of the pyramid
-            if key not in columns or row > columns[key][0]:
-                columns[key] = (row, col)
-        return set(columns.values())
+        row, col = rc
+        count = 0
+
+        above_left = (row + 1, col - 1)
+        above_right = (row + 1, col)
+
+        if above_left in self.chips and self.chips[above_left]["present"]:
+            count += 1
+        if above_right in self.chips and self.chips[above_right]["present"]:
+            count += 1
+
+        return count
+
+    def is_removable(self, rc):
+        """
+        A chip is removable iff fewer than 2 chips are above it.
+        """
+        return self.count_chips_above(rc) < 2
 
     # ==============================
     #         CLICK HANDLER
@@ -200,9 +204,7 @@ class PyramidNimGUI:
             self.status_label.config(text="stop that chud")
             return
 
-        visible = self.compute_visible_chips()
-        if clicked_rc not in visible:
-            # Not on the outer (visible) layer
+        if not self.is_removable(clicked_rc):
             self.status_label.config(text="stop that chud")
             return
 
@@ -211,7 +213,7 @@ class PyramidNimGUI:
         to_remove = self.compute_supported_chain(clicked_rc)
         self.apply_removal(to_remove)
 
-        # Update Dyck path, permutation, and nimber after the move
+        # Update Dyck path and permutation after the move
         self.update_dyck_from_board()
 
         # Check for game over
@@ -228,7 +230,6 @@ class PyramidNimGUI:
         self.update_player_label()
 
     def find_chip_at(self, x, y):
-        # Find a present chip whose circle contains (x,y)
         for (row, col), chip in self.chips.items():
             if not chip["present"]:
                 continue
@@ -245,14 +246,14 @@ class PyramidNimGUI:
     def compute_supported_chain(self, start_rc):
         """
         Given a chosen chip (row, col), return the set of all chips that must be
-        removed: the chosen chip plus every chip above that is supported (directly
-        or indirectly) by something already in the removal set.
+        removed: the chosen chip plus every chip above that is supported directly
+        or indirectly by something already in the removal set.
 
         Indexing: row 0 = bottom.
-        A chip at (row, col) with row > 0 is supported by (row-1, col) and (row-1, col+1),
-        if those exist.
+        A chip at (row, col) with row > 0 is supported by
+        (row - 1, col) and (row - 1, col + 1), if those exist.
         """
-        to_remove = set([start_rc])
+        to_remove = {start_rc}
 
         changed = True
         while changed:
@@ -264,15 +265,17 @@ class PyramidNimGUI:
                     continue
                 if row == 0:
                     continue
+
                 below1 = (row - 1, col)
                 below2 = (row - 1, col + 1)
+
                 if below1 in to_remove or below2 in to_remove:
                     to_remove.add((row, col))
                     changed = True
+
         return to_remove
 
     def apply_removal(self, to_remove):
-        # Visually and logically remove all chips in to_remove
         for rc in to_remove:
             chip = self.chips[rc]
             if chip["present"]:
@@ -284,7 +287,7 @@ class PyramidNimGUI:
                 )
 
     # ==============================
-    #        DYCK / PERM / NIMBER
+    #        DYCK / PERM
     # ==============================
 
     def update_dyck_from_board(self):
@@ -292,65 +295,48 @@ class PyramidNimGUI:
         Compute the board's Dyck word via board_to_dyck_word and show:
           - Dyck word
           - 132-avoiding permutation from Krattenthaler's bijection
-          - Sprague–Grundy nimber of the current position
           - Visual NE-path in the square.
         """
         dw = board_to_dyck_word(self.chips, self.n_tiers)
         if not dw:
-            # In practice, empty board happens only at game over, but handle anyway.
-            nim_text = ""
-            if self.nimber_calc is not None:
-                nim_val = self.nimber_calc.nimber_from_gui_chips(self.chips)
-                nim_text = f"\nNimber: {nim_val}"
             self.dyck_display.config(
-                text="Board empty\nDyck word: \nPermutation: " + nim_text
+                text="Board empty\nDyck word: \nPermutation: "
             )
             self.dyck_canvas.delete("all")
             return
 
         try:
-            parens = dyck_word_to_parentheses(dw)
             ud = dyck_word_to_UD(dw)
-            # Krattenthaler inverse: Dyck path -> 132-avoiding permutation
             perm = dyck_word_to_132_avoiding_permutation(dw)
             perm_str = format_permutation(perm)
-
-            # Compute nimber from current chips via PyramidNimberCalculator
-            nim_val = None
-            if self.nimber_calc is not None:
-                nim_val = self.nimber_calc.nimber_from_gui_chips(self.chips)
-
-            nim_line = f"\nNimber: {nim_val}" if nim_val is not None else ""
 
             self.dyck_display.config(
                 text=(
                     f"Dyck Word: {ud}\n"
                     f"Permutation: {perm_str}"
-                    f"{nim_line}"
                 )
             )
             self.draw_dyck_path(dw)
         except Exception as e:
             self.dyck_display.config(
-                text=f"Error computing Dyck path / permutation / nimber:\n{e}"
+                text=f"Error computing Dyck path / permutation:\n{e}"
             )
             self.dyck_canvas.delete("all")
 
     def draw_dyck_path(self, dw):
         """
         Draw the Dyck path on self.dyck_canvas as a North/East path
-        from (0,0) to (N,N), where 1 -> North (up) and 0 -> East (right).
+        from (0,0) to (N,N), where 1 -> North and 0 -> East.
         """
         canvas = self.dyck_canvas
         canvas.delete("all")
         if not dw:
             return
 
-        N = sum(dw)  # number of up-steps = semilength
+        N = sum(dw)
         if N <= 0:
             return
 
-        # Canvas geometry
         width = int(canvas.cget("width"))
         height = int(canvas.cget("height"))
         size = min(width, height)
@@ -364,27 +350,25 @@ class PyramidNimGUI:
             y = margin + inner * i / N
             canvas.create_line(margin, y, margin + inner, y, fill="#dddddd")
 
-        # Diagonal y = x
         x0 = margin
         y0 = margin + inner
         x1 = margin + inner
         y1 = margin
         canvas.create_line(x0, y0, x1, y1, fill="gray", dash=(3, 3))
 
-        # Build path points
         x = 0
         y = 0
         points = []
-        # starting point
+
         px = margin + inner * x / N
         py = margin + inner * (N - y) / N
         points.append((px, py))
 
         for step in dw:
             if step == 1:
-                y += 1  # North
+                y += 1
             else:
-                x += 1  # East
+                x += 1
             px = margin + inner * x / N
             py = margin + inner * (N - y) / N
             points.append((px, py))

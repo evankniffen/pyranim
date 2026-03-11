@@ -4,9 +4,11 @@ nimbers2.py
 Another attempt to compute the (correct) nimbers 
 """
 import numpy as np
+import json
+import time
 from dyckPaths import (
     board_to_dyck_word,
-    dyck_word_to_parentheses,
+    UD_to_dyck_word,
     dyck_word_to_UD,
 )
 
@@ -413,6 +415,9 @@ class game:
                     self.update_next(key)
   
     def compute_nimber(self, UD):
+        """
+        Computes the nimber for given state
+        """
         if self.states[UD]["nim"] != None: # already computed
             return self.states[UD]["nim"]
         if self.states[UD]["n_chips"] <= 2: # base cases
@@ -431,6 +436,9 @@ class game:
 
     
     def compute_nimbers(self):
+        """
+        Computes every nimber
+        """
         self.generate_all()
 
         # we'll partition our states into categories of the same number of chips
@@ -449,27 +457,74 @@ class game:
             #self.print()
     
     def print_strategy(self, UD):
+        """
+        Prints the best strategy given a state
+        """
         print("Current state:")
         self.states[UD]["state"].print()
         print(self.states[UD]["state"].next_UD)
         print(["*"+str(self.states[key]["nim"]) for key in self.states[UD]["state"].next_UD])
 
         print()
-        print("Winning move: ")
 
         if self.states[UD]["nim"] > 0: # you can win by moving to a *0
-            print("First player to move from here can win. Possible winning moves are:")
+            print("First move WIN. Possible winning moves are:")
             for key in self.states[UD]["state"].next_UD:
                 if self.states[key]["nim"] == 0:
                     self.states[key]["state"].print()
         else: # You can't win, but I'll recommend a maximal nim move
             maxnim = max([self.states[key]["nim"] for key in self.states[UD]["state"].next_UD])
-            print("First player to move from here will lose. I would recommend the maximum nim (*" + str(maxnim) + ") move:")
+            print("First move LOSE. I would recommend a maximum nim (*" + str(maxnim) + ") move:")
             for key in self.states[UD]["state"].next_UD:
                 if self.states[key]["nim"] == maxnim:
                     self.states[key]["state"].print()
-                    break
+    
+    def export_to_json(self, filename="game_states.json"):
+        """
+        Prints all useful info to be able to reconstruct the dictionary in a different format
+        for the actual game. In game runtime, gives the nim and n_chips value; if asked for best strategy,
+        will instead use the bit map to make relevant state objects.
+        Output looks like
+        dict:
+            key: (string)
+                dyck word, U/D
+            value: (dict)
+                key: (string) "bitmap"
+                value: (ndarray) the bitmap as 0s and 1s
+
+                key: (string) "nim"
+                value: (int) the nimber of this state
+
+                key: (string) "n_chips"
+                value: (int) the number of chips in this state
+                
+        """
+
+        # copy relevant info
+        copydict = {}
+        for key, value in self.states.items():
+            #copydict[key] = int(value["nim"])
+            # Removed (too much storage)
+            #   |
+            #   v
+            #copydict[key]["bitmap"] = value["state"].bitmap.astype(int).tolist()
+            #copydict[key]["nim"] = int(value["nim"])
+            #copydict[key]["n_chips"] = int(value["n_chips"])
+
+            # THIS CODE BREAKS AT n_tiers=15
+            # (and probably so will your computer's hard drive storage, no matter what I'll do, I'm pretty sure)
+
+            newkey = 0
+            dyck_word = UD_to_dyck_word(key)
+            for i in range(len(dyck_word)):
+                newkey += dyck_word[i] * (2**i)
+            copydict[newkey] = int(value["nim"])
         
+        # export
+        with open(filename, "w") as f:
+            json.dump(copydict, f, indent=2)
+
+        return copydict
 
 
 ##############################################################################
@@ -511,7 +566,7 @@ three_game.print()
 
 ##############################################################################
 # Testing nimber computation
-
+"""
 three_game = game(3)
 three_game.load()
 three_game.compute_nimbers()
@@ -530,3 +585,46 @@ five_game.print_strategy("UUDUDUDDUDUD")
 
 print("\n\n\n\n\n\n\n\n")
 five_game.print_strategy("UUUUDDDUDDUD")
+
+print("\n\n\n\n\n\n\n\n")
+one_game = game(1)
+one_game.load()
+one_game.compute_nimbers()
+one_game.print()
+"""
+
+##############################################################################
+# Testing exports
+"""
+five_game = game(5)
+five_game.load()
+five_game.compute_nimbers()
+five_game.export_to_json(filename="5_game_states.json")
+
+first = np.array(((True, True, True, True), (False, True, False, False), (False, False, False, False), (False, False, False, False)))
+print(first.astype(int).tolist())
+print(type(np.array(first.astype(int).tolist()).astype(bool)))
+print(np.array(first.astype(int).tolist()).astype(bool))
+"""
+
+##############################################################################
+# Exporting final data
+time_taken = []
+
+for n in range(1,12): # n is the number of tiers!
+    start = time.time() # Timing each one
+
+    mygame = game(n)
+    mygame.load()
+    mygame.compute_nimbers()
+
+    end = time.time() # stop time before export
+
+    mygame.export_to_json(filename=str(n)+"_game_states.json")
+    biggestdyck = "U"*(n+1) + "D"*(n+1)
+    final = mygame.states[biggestdyck]["nim"]
+
+    time_taken.append(end-start)
+    print(str(n)+"-game (*"+ str(final) +") took", end-start, "seconds to compute")
+
+print(time_taken, sep=',')
