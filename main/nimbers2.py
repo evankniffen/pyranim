@@ -4,12 +4,48 @@ nimbers2.py
 Another attempt to compute the (correct) nimbers 
 """
 import numpy as np
+from dyckPaths import (
+    board_to_dyck_word,
+    dyck_word_to_parentheses,
+    dyck_word_to_UD,
+)
 
 # Global parameter on whether moves should be checked for size, legality
 # each time they are initialized
 CHECK = (True, True)
 # Global parameter on pyramid size (tested at 3)
 N_TIERS = 3
+
+
+def bitmap_to_dyck_word(bitmap):
+    """
+    Convert a legal pyramid bitmap (numpy bool array of shape (n,n))
+    into a Dyck word as a list of 1/0, using the same convention as
+    board_to_dyck_word:
+        1 = U
+        0 = D
+
+    The output has length 2*(n+1).
+    """
+    bitmap = np.asarray(bitmap, dtype=bool)
+
+    if bitmap.ndim != 2 or bitmap.shape[0] != bitmap.shape[1]:
+        raise ValueError("bitmap must be a square numpy array of shape (n_tiers, n_tiers)")
+
+    n = bitmap.shape[0]
+    if n == 0:
+        return []
+
+    chips = {}
+    for row in range(n):
+        for col in range(n - row):
+            chips[(row, col)] = {
+                "row": row,
+                "col": col,
+                "present": bool(bitmap[row, col]),
+            }
+
+    return board_to_dyck_word(chips, n)
 
 class state:
     # TODO: revise bitmap to grow an envelope to avoid if else statements
@@ -31,8 +67,14 @@ class state:
         
     Attributes
     ------------
+    UD: string
+        the state's dyck word as U/D size 2*(n_tier + 1)
+    n_chips: int
+        the number of chips this state has
     next: list (of bitmap)
         list of all possible next states as bitmaps
+    next_UD: list (of strings)
+        list of all possible next states as Dyck words U/D
     nimber: unsigned int
         computed nimber
 
@@ -41,6 +83,10 @@ class state:
     def __init__(self, bitmap, n_tiers=N_TIERS, check=CHECK):
         self.n_tiers = n_tiers
         self.bitmap = bitmap
+        self.dyck = dyck_word_to_UD(bitmap_to_dyck_word(bitmap))
+        self.n_chips = np.sum(bitmap)
+        self.next = []
+        self.next_UD = []
 
         if CHECK[0]:
             if not self.check():
@@ -86,7 +132,10 @@ class state:
     def print(self):
         """
         Prints the state, why not lmao
+        TODO: make it also print the nim
         """
+
+        print(self.dyck)
 
         print('*' * (2* self.n_tiers + 3))
 
@@ -164,6 +213,8 @@ class state:
                     self.next.append(removed)
                 except: # can't (womp womp)
                     continue
+
+        self.next_UD = [dyck_word_to_UD(bitmap_to_dyck_word(bitmap)) for bitmap in self.next]
     
     def print_next(self):
         print("-"*10)
@@ -241,6 +292,7 @@ big = np.array(((True, True, True, True), (True, True, True, False), (True, True
 bigstate = state(big, n_tiers=4)
 bigstate.find_next()
 bigstate.print_next()
+print(bigstate.next_UD)
 """
 ##############################################################################
 
@@ -258,14 +310,16 @@ class game:
     ------------
     states: dict (of dicts)
         key: ndarray
-            bitmap
+            dyck word
         value: dict
             "state": (state)
                 state object of bitmap
-            "found next?": (bool)
+            "next?": (bool)
                 does this state have the next values found?
-            "found nimber?": (bool)
+            "nim?": (bool)
                 does this state have its nim value found?
+            "n_chips": (int)
+                number of chips in this state, used for ranking
 
     """
 
@@ -288,12 +342,56 @@ class game:
                 for col in range(self.n_tiers - row, self.n_tiers):
                     bitmap[row][col] = False
             
-        #self.states[# TODO: enter dyck word here] = {"state": state(bitmap, n_tiers=self.n_tiers), "found next?": False, "found nim?": False}
-        # (this will naturally throw an error for improper inputs when initializing state)
+        if dyck_word_to_UD(bitmap_to_dyck_word(bitmap)) in self.states.keys(): # already loaded this state
+            return
+
+        self.states[dyck_word_to_UD(bitmap_to_dyck_word(bitmap))] = {"state": state(bitmap, n_tiers=self.n_tiers), "next?": False, "nim?": False, "n_chips": np.sum(bitmap)}
+
+    def print(self):
+        """
+        Shows the contents currently produced in the game
+        """
+        for value in self.states.values():
+            print('-'*10)
+            value["state"].print()
+            print(value["state"].next_UD)
+            print(value["next?"], value["nim?"], value["n_chips"])
+
+
+    def update_next(self, UD):
+        """
+        Updates the selected states to find every possible next state
+        and appends those new states to the dictionary.
+        """
+        if self.states[UD]["next?"]: # already updated
+            return
+        self.states[UD]["state"].find_next()
+
+        for i in range(len(self.states[UD]["state"].next)):
+            if self.states[UD]["state"].next_UD[i] not in self.states.keys():
+                self.states[self.states[UD]["state"].next_UD[i]] = {"state": state(self.states[UD]["state"].next[i], n_tiers=self.n_tiers), "next?": False, "nim?": False}
+                self.states[self.states[UD]["state"].next_UD[i]]["n_chips"] = self.states[self.states[UD]["state"].next_UD[i]]["state"].n_chips
+
+        self.states[UD]["next?"] = True
 
 
 ##############################################################################
 # Testing initializations
+
 five_game = game(5)
 five_game.load()
-print(five_game.states)
+five_game.print()
+print("\n\n\n\n\n\n")
+five_game.update_next("UUUUUUDDDDDD")
+five_game.print()
+
+print("\n\n\n\n\n\n")
+four_game = game(4)
+first = np.array(((True, True, True, True), (False, True, False, False), (False, False, False, False), (False, False, False, False)))
+four_game.load(default_load=False, bitmap=first)
+four_game.print()
+print("\n\n\n\n\n\n")
+four_game.update_next("UUDUUDDUDD")
+four_game.print()
+print("\n\n\n\n\n\n")
+#print(tuple(first))
