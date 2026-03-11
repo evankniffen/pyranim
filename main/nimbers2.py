@@ -17,6 +17,26 @@ CHECK = (True, True)
 N_TIERS = 3
 
 
+def mex(values):
+    """
+    Return the minimum excluded nonnegative integer from a list
+    of nonnegative integers.
+
+    Runs in O(n) time and O(n) space.
+    """
+    #vals = list(values)
+    n = len(values)
+    seen = [False] * (n + 1)
+
+    for x in values:
+        if 0 <= x <= n:
+            seen[x] = True
+
+    for m, present in enumerate(seen):
+        if not present:
+            return m
+
+
 def bitmap_to_dyck_word(bitmap):
     """
     Convert a legal pyramid bitmap (numpy bool array of shape (n,n))
@@ -75,8 +95,6 @@ class state:
         list of all possible next states as bitmaps
     next_UD: list (of strings)
         list of all possible next states as Dyck words U/D
-    nimber: unsigned int
-        computed nimber
 
     """
 
@@ -130,11 +148,6 @@ class state:
         
 
     def print(self):
-        """
-        Prints the state, why not lmao
-        TODO: make it also print the nim
-        """
-
         print(self.dyck)
 
         print('*' * (2* self.n_tiers + 3))
@@ -226,12 +239,6 @@ class state:
             newstate.print()
 
 
-    def find_nimber(self) -> int:
-        # TODO: finish nimber computation functionality
-        self.nimber = 0
-        return self.nimber
-
-
 ##############################################################################
 # Testing initializations
 """
@@ -316,10 +323,13 @@ class game:
                 state object of bitmap
             "next?": (bool)
                 does this state have the next values found?
-            "nim?": (bool)
-                does this state have its nim value found?
+            "nim": (int)
+                nim value (none if not yet found)
             "n_chips": (int)
                 number of chips in this state, used for ranking
+    buckets: list of list
+        bucket: list, with everything in the list as the same number of stones
+            string, contains dyck path keys
 
     """
 
@@ -345,17 +355,18 @@ class game:
         if dyck_word_to_UD(bitmap_to_dyck_word(bitmap)) in self.states.keys(): # already loaded this state
             return
 
-        self.states[dyck_word_to_UD(bitmap_to_dyck_word(bitmap))] = {"state": state(bitmap, n_tiers=self.n_tiers), "next?": False, "nim?": False, "n_chips": np.sum(bitmap)}
+        self.states[dyck_word_to_UD(bitmap_to_dyck_word(bitmap))] = {"state": state(bitmap, n_tiers=self.n_tiers), "next?": False, "nim": None, "n_chips": np.sum(bitmap)}
 
     def print(self):
         """
         Shows the contents currently produced in the game
         """
+        print("number of states:", len(self.states))
         for value in self.states.values():
             print('-'*10)
             value["state"].print()
             print(value["state"].next_UD)
-            print(value["next?"], value["nim?"], value["n_chips"])
+            print(value["next?"], value["n_chips"], "*"+str(value["nim"]))
 
 
     def update_next(self, UD):
@@ -365,19 +376,84 @@ class game:
         """
         if self.states[UD]["next?"]: # already updated
             return
-        self.states[UD]["state"].find_next()
+        self.states[UD]["state"].find_next() # find the next ones
 
-        for i in range(len(self.states[UD]["state"].next)):
+        for i in range(len(self.states[UD]["state"].next)): # add next ones to dict
             if self.states[UD]["state"].next_UD[i] not in self.states.keys():
-                self.states[self.states[UD]["state"].next_UD[i]] = {"state": state(self.states[UD]["state"].next[i], n_tiers=self.n_tiers), "next?": False, "nim?": False}
+                self.states[self.states[UD]["state"].next_UD[i]] = {"state": state(self.states[UD]["state"].next[i], n_tiers=self.n_tiers), "next?": False, "nim": None}
                 self.states[self.states[UD]["state"].next_UD[i]]["n_chips"] = self.states[self.states[UD]["state"].next_UD[i]]["state"].n_chips
 
         self.states[UD]["next?"] = True
 
+    def generate_all(self):
+        """
+        Updates every state to include all successors, if not already updated
+        """
+        # why isn't there do while loop here???
+        # anyways at each stage we're just gonna update what we can
+        # technically this should only take at most however many chips
+        # the initial state had
+        to_update = []
+
+        for key, value in self.states.items():
+            if not value["next?"]:
+                to_update.append(key)
+        
+        for key in to_update:
+            self.update_next(key)
+        
+        while to_update != []:
+            to_update = []
+
+            for key, value in self.states.items():
+                if not value["next?"]:
+                    to_update.append(key)
+        
+            for key in to_update:
+                    self.update_next(key)
+  
+    def compute_nimber(self, UD):
+        if self.states[UD]["nim"] != None: # already computed
+            return self.states[UD]["nim"]
+        if self.states[UD]["n_chips"] <= 2: # base cases
+            self.states[UD]["nim"] = self.states[UD]["n_chips"] % 2
+            return self.states[UD]["nim"]
+        
+        # otherwise, do the mex :sunglasses:
+
+        #print("Doing mex on:")
+        #self.states[UD]["state"].print()
+        #print(self.states[UD]["state"].print_next())
+        possibilities = [self.states[key]["nim"] for key in self.states[UD]["state"].next_UD]
+        #print(possibilities)
+        self.states[UD]["nim"] = mex(possibilities)
+        return self.states[UD]["nim"]
+
+    
+    def compute_nimbers(self):
+        self.generate_all()
+
+        # we'll partition our states into categories of the same number of chips
+        self.buckets = {}
+        for n_chips in range(0, self.n_tiers*(self.n_tiers + 1)//2 + 1):
+            self.buckets[n_chips] = []
+        for key, value in self.states.items():
+            self.buckets[value["n_chips"]].append(key)
+        
+        #print(self.buckets)
+
+        # compute for each category starting from the (literal) bottom
+        for n_chips in range(0, self.n_tiers*(self.n_tiers + 1)//2 + 1):
+            for key in self.buckets[n_chips]:
+                self.compute_nimber(key)
+            #self.print()
+            
+        
+
 
 ##############################################################################
 # Testing initializations
-
+"""
 five_game = game(5)
 five_game.load()
 five_game.print()
@@ -395,3 +471,26 @@ four_game.update_next("UUDUUDDUDD")
 four_game.print()
 print("\n\n\n\n\n\n")
 #print(tuple(first))
+"""
+
+##############################################################################
+# Testing dictionary generation
+"""
+five_game = game(5)
+five_game.load()
+five_game.generate_all()
+print("done")
+print("number of states:", len(five_game.states))
+
+three_game = game(3)
+three_game.load()
+three_game.generate_all()
+three_game.print()
+"""
+
+##############################################################################
+# Testing nimber computation
+three_game = game(3)
+three_game.load()
+three_game.compute_nimbers()
+three_game.print()
