@@ -447,7 +447,28 @@ class game:
             for key in self.buckets[n_chips]:
                 self.compute_nimber(key)
             #self.print()
-            
+    
+    def print_strategy(self, UD):
+        print("Current state:")
+        self.states[UD]["state"].print()
+        print(self.states[UD]["state"].next_UD)
+        print(["*"+str(self.states[key]["nim"]) for key in self.states[UD]["state"].next_UD])
+
+        print()
+        print("Winning move: ")
+
+        if self.states[UD]["nim"] > 0: # you can win by moving to a *0
+            print("First player to move from here can win. Possible winning moves are:")
+            for key in self.states[UD]["state"].next_UD:
+                if self.states[key]["nim"] == 0:
+                    self.states[key]["state"].print()
+        else: # You can't win, but I'll recommend a maximal nim move
+            maxnim = max([self.states[key]["nim"] for key in self.states[UD]["state"].next_UD])
+            print("First player to move from here will lose. I would recommend the maximum nim (*" + str(maxnim) + ") move:")
+            for key in self.states[UD]["state"].next_UD:
+                if self.states[key]["nim"] == maxnim:
+                    self.states[key]["state"].print()
+                    break
         
 
 
@@ -490,7 +511,22 @@ three_game.print()
 
 ##############################################################################
 # Testing nimber computation
+
 three_game = game(3)
 three_game.load()
 three_game.compute_nimbers()
 three_game.print()
+
+five_game = game(5)
+five_game.load()
+five_game.compute_nimbers()
+five_game.print()
+
+print("\n\n\n\n\n\n\n\n")
+five_game.print_strategy("UUUUUUDDDDDD")
+
+print("\n\n\n\n\n\n\n\n")
+five_game.print_strategy("UUDUDUDDUDUD")
+
+print("\n\n\n\n\n\n\n\n")
+five_game.print_strategy("UUUUDDDUDDUD")
