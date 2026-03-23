@@ -6,6 +6,7 @@ Another attempt to compute the (correct) nimbers
 import numpy as np
 import json
 import time
+import matplotlib.pyplot as plt
 from dyckPaths import (
     board_to_dyck_word,
     UD_to_dyck_word,
@@ -478,6 +479,67 @@ class game:
             for key in self.states[UD]["state"].next_UD:
                 if self.states[key]["nim"] == maxnim:
                     self.states[key]["state"].print()
+
+    def compute_isomorphism_types(self):
+        """
+        Computes an isomorphism-type label for every state.
+        Two states are isomorphic iff they get the same iso label.
+        """
+        #self.generate_all()
+
+        """
+        max_chips = self.n_tiers * (self.n_tiers + 1) // 2
+        self.buckets = {k: [] for k in range(max_chips + 1)}
+        for key, value in self.states.items():
+            self.buckets[value["n_chips"]].append(key)
+        """
+
+        # canonical tuple of child iso-labels -> canonical integer id
+        self.iso_dict = {}
+        next_iso_id = 0
+
+        for n_chips in range(self.n_tiers * (self.n_tiers + 1) // 2 + 1):
+            for key in self.buckets[n_chips]:
+                children = self.states[key]["state"].next_UD
+
+                # terminal state: empty tuple
+                child_types = tuple(sorted(self.states[c]["iso"] for c in children)) if children else ()
+
+                if child_types not in self.iso_dict:
+                    self.iso_dict[child_types] = next_iso_id
+                    next_iso_id += 1
+
+                self.states[key]["iso"] = self.iso_dict[child_types]
+
+    def print_isomorphisms(self, picture=True):
+        """
+        Returns a list indexed by the number of chips, of the number of isomorphic states
+        and prints a graph of that 
+        """
+        # make the list
+        isomorphism_by_n_chips = []
+        for n_chips in range(self.n_tiers * (self.n_tiers + 1) // 2 + 1):
+            classes = [self.states[key]["iso"] for key in self.buckets[n_chips]]
+            isomorphism_by_n_chips.append(int(np.size(np.unique(classes))))
+        
+        if picture:
+            # make a histogram of the list
+            
+
+            xs = list(range(self.n_tiers * (self.n_tiers + 1) // 2 + 1))
+            plt.figure(figsize=(8, 5))
+            plt.bar(xs, isomorphism_by_n_chips, width=0.8)
+            plt.xlabel("Number of chips")
+            plt.ylabel("Number of isomorphism classes")
+            plt.title(f"Isomorphism classes by chip count (n_tiers={self.n_tiers})")
+            plt.xticks(xs)
+            plt.tight_layout()
+            #plt.show()
+            filename = f"{self.n_tiers}_isomorphisms.png"
+            plt.savefig(filename, dpi=200)
+            plt.close()
+
+        return isomorphism_by_n_chips
     
     def export_to_json(self, filename="game_states.json"):
         """
@@ -557,6 +619,63 @@ class game:
             json.dump(copydict, f, indent=2)
 
         return copydict
+    
+    def export_to_json_iso(self, filename="game_states_iso.json"):
+        """
+        Prints all useful info to be able to reconstruct the iso dictionary in a different format
+        for the actual game. In game runtime, gives the isomorphism class.
+        Output looks like
+        dict:
+            key: (int)
+                dyck word as int
+            value: (int) 
+                the isomorphism class of this state
+                
+        """
+
+        # copy relevant info
+        copydict = {}
+        for key, value in self.states.items():
+            #copydict[key] = int(value["nim"])
+            # Removed (too much storage)
+            #   |
+            #   v
+            #copydict[key]["bitmap"] = value["state"].bitmap.astype(int).tolist()
+            #copydict[key]["nim"] = int(value["nim"])
+            #copydict[key]["n_chips"] = int(value["n_chips"])
+
+            # THIS CODE BREAKS AT n_tiers=15
+            # (and probably so will your computer's hard drive storage, no matter what I'll do, I'm pretty sure)
+
+            newkey = 0
+            dyck_word = UD_to_dyck_word(key)
+            for i in range(len(dyck_word)):
+                newkey += dyck_word[i] * (2**i)
+            copydict[newkey] = int(value["iso"])
+        
+        # export
+        with open(filename, "w") as f:
+            json.dump(copydict, f, indent=2)
+
+        return copydict
+
+    def export_stats(self, filename="game_statistics.json"):
+        """
+        Gives info to generate a final txt file with game data per n_tier
+        """
+        to_export = {}
+
+        biggestdyck = "U"*(n+1) + "D"*(n+1)
+        final = mygame.states[biggestdyck]["nim"]
+        to_export["nimber:"] = int(final)
+
+        isomorphisms = self.print_isomorphisms(picture=True)
+        to_export["K:"] = int(np.sum(isomorphisms))
+        to_export["M:"] = int(np.max(isomorphisms))
+        to_export["isomorphism_by_n_chips:"] = isomorphisms
+
+        return to_export
+
 
 
 ##############################################################################
@@ -642,8 +761,11 @@ print(np.array(first.astype(int).tolist()).astype(bool))
 ##############################################################################
 # Exporting final data
 time_taken = []
+time_taken_iso = []
 
-for n in range(1,15): # n is the number of tiers!
+games = {}
+
+for n in range(1,11): # n is the number of tiers!
     start = time.time() # Timing each one
 
     mygame = game(n)
@@ -655,9 +777,56 @@ for n in range(1,15): # n is the number of tiers!
     biggestdyck = "U"*(n+1) + "D"*(n+1)
     final = mygame.states[biggestdyck]["nim"]
     mygame.export_to_json(filename=str(n)+"_game_states.json")
-    mygame.export_to_json_big(filename=str(n)+"_game_states_big.json")
+    #mygame.export_to_json_big(filename=str(n)+"_game_states_big.json")
 
     time_taken.append(end-start)
     print(str(n)+"-game (*"+ str(final) +") took", end-start, "seconds to compute")
 
+    start = time.time() # Timing the isomorphism computation
+
+    mygame.compute_isomorphism_types()
+    K = len(mygame.iso_dict)
+
+    end = time.time()
+
+    mygame.export_to_json_iso(filename=str(n)+"_game_states_iso.json")
+
+    time_taken_iso.append(end-start)
+    print(str(n)+"-game (K_"+str(n)+"="+str(K)+") took", end-start, "seconds to compute")
+
+    stats = mygame.export_stats()
+    stats["time_nim:"] = time_taken[-1]
+    stats["time_iso:"] = time_taken_iso[-1]
+
+    games[int(n)] = stats
+
 print(time_taken, sep=',')
+print(time_taken_iso, sep=',')
+
+with open("games.json", "w") as f:
+    json.dump(games, f, indent=2)
+
+# print K and M on the y-axis in the same graph, with n_chips as the x-axis
+ns = sorted(games.keys())
+K_vals = [games[n]["K:"] for n in ns]
+M_vals = [games[n]["M:"] for n in ns]
+
+fig, ax1 = plt.subplots(figsize=(8, 5))
+
+color1 = "tab:blue"
+ax1.plot(ns, K_vals, marker="o", color=color1, linewidth=2)
+ax1.set_xlabel("Number of tiers n")
+ax1.set_ylabel("K", color=color1)
+ax1.tick_params(axis="y", labelcolor=color1)
+
+ax2 = ax1.twinx()
+color2 = "tab:red"
+ax2.plot(ns, M_vals, marker="s", color=color2, linewidth=2)
+ax2.set_ylabel("M", color=color2)
+ax2.tick_params(axis="y", labelcolor=color2)
+
+ax1.set_xticks(ns)
+plt.title("K and M by number of tiers")
+fig.tight_layout()
+plt.savefig("K_and_M.png", dpi=200)
+plt.close()
